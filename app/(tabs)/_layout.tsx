@@ -38,6 +38,7 @@ export default function TabLayout() {
           let iconName = 'home-outline';
           if (route.name === 'design') iconName = 'images-outline';
           if (route.name === 'booking') iconName = 'calendar-outline';
+          if (route.name === 'myBookings') iconName = 'list-outline';
           if (route.name === 'payment') iconName = 'card-outline';
           if (route.name === 'profile') iconName = 'person-outline';
           return <Ionicons name={iconName} size={28} color={color} style={{ marginBottom: 6, opacity: focused ? 1 : 0.7 }} />;
@@ -47,6 +48,7 @@ export default function TabLayout() {
       <Tabs.Screen name="home" options={{ title: 'Home' }} />
       <Tabs.Screen name="design" options={{ title: 'Designs' }} />
       <Tabs.Screen name="booking" options={{ title: 'Booking' }} />
+      <Tabs.Screen name="myBookings" options={{ title: 'My Bookings' }} />
       <Tabs.Screen name="payment" options={{ title: 'Payment' }} />
       <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
     </Tabs>

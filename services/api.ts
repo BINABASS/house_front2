@@ -18,6 +18,17 @@ const API_CONFIG = {
   REFRESH_TOKEN_KEY: Constants.expoConfig?.extra?.REFRESH_TOKEN_KEY || 'refresh_token'
 };
 
+// Base origin for absolute media URLs
+const API_ORIGIN = (() => {
+  try {
+    const url = new URL(API_CONFIG.BASE_URL);
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    // Fallback: strip '/api/v1' if present
+    return API_CONFIG.BASE_URL.replace(/\/?api\/?v1.*$/, '');
+  }
+})();
+
 const api = axios.create({
   baseURL: API_CONFIG.BASE_URL,
   timeout: API_CONFIG.TIMEOUT,
@@ -140,3 +151,82 @@ export const authService = {
 
 export { api };
 export default api;
+
+// Design & booking services
+export const designService = {
+  async listCategories() {
+    const res = await api.get('/categories/');
+    return res.data;
+  },
+  async listTags() {
+    const res = await api.get('/tags/');
+    return res.data;
+  },
+  async createDesign(payload: { title: string; description: string; price: string | number; category_id: number; tag_ids?: number[]; is_premium?: boolean; }) {
+    const res = await api.post('/designs/', payload);
+    return res.data;
+  },
+  async getDesign(id: number) {
+    const res = await api.get(`/designs/${id}/`);
+    return res.data;
+  },
+  async uploadImages(designId: number, files: Array<{ uri: string; name: string; type: string }>, options?: { onUploadProgress?: (e: any) => void }) {
+    const form = new FormData();
+    files.forEach(file => form.append('images', { uri: file.uri, name: file.name, type: file.type } as any));
+    const res = await api.post(`/designs/${designId}/upload_images/`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: options?.onUploadProgress,
+    });
+    return res.data;
+  },
+  async listMyDesigns() {
+    const res = await api.get('/designs/', { params: { designer: 'me' } });
+    return res.data;
+  },
+  async listPublicDesigns(filters?: any) {
+    const res = await api.get('/designs/', { params: filters });
+    return res.data;
+  },
+  async likeDesign(id: number) {
+    const res = await api.post(`/designs/${id}/like/`);
+    return res.data;
+  },
+};
+
+export const bookingService = {
+  async listMine() {
+    const res = await api.get('/bookings/');
+    return res.data;
+  },
+  async create(payload: {
+    design_id: number;
+    amount?: number;
+    deposit?: number;
+    start_date: string;
+    end_date?: string;
+    address: string;
+    city: string;
+    state: string;
+    country: string;
+    postal_code: string;
+    notes?: string;
+  }) {
+    const res = await api.post('/bookings/', payload);
+    return res.data;
+  },
+  async confirm(id: number) {
+    const res = await api.post(`/bookings/${id}/confirm/`);
+    return res.data;
+  },
+  async cancel(id: number) {
+    const res = await api.post(`/bookings/${id}/cancel/`);
+    return res.data;
+  },
+};
+
+export const toMediaUrl = (path: string | null | undefined): string | null => {
+  if (!path) return null;
+  if (/^https?:\/\//i.test(path)) return path;
+  if (path.startsWith('/')) return `${API_ORIGIN}${path}`;
+  return `${API_ORIGIN}/${path}`;
+};

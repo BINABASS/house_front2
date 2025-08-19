@@ -49,7 +49,7 @@ export default function MyDesigns({ navigation }: any) {
   const renderItem = ({ item }: { item: Design }) => {
     const primary = item.images?.find((im) => im.is_primary) || item.images?.[0];
     return (
-      <TouchableOpacity style={styles.card} onPress={() => navigation.navigate('DesignDetail', { designId: item.id })}>
+      <TouchableOpacity style={styles.card} onPress={() => navigation.push('/designs/' + item.id)}>
         <Image source={{ uri: primary?.image }} style={styles.image} />
         <View style={styles.cardContent}>
           <View style={styles.cardHeader}>

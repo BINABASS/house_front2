@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, Image, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
+import { View, Text, ScrollView, Image, TouchableOpacity, StyleSheet, Dimensions, ActivityIndicator } from 'react-native';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -6,18 +6,17 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFonts, Montserrat_400Regular, Montserrat_700Bold } from '@expo-google-fonts/montserrat';
 import AppLoading from 'expo-app-loading';
 import { Colors } from '../../constants/Colors';
+import { designService, toMediaUrl } from '../../services/api';
 
 const { width } = Dimensions.get('window');
 
-// Define a type for Design for better type safety
-interface DesignItem {
+type ApiDesign = {
   id: number;
-  name: string;
-  category: string;
-  image: any; // For require('../../assets/...')
+  title: string;
   price: number;
-  rating: number; // Initial rating
-}
+  category?: { id: number; name: string };
+  images?: { id: number; image: string; is_primary: boolean }[];
+};
 
 // Tumia picha zako za assets kwa icons za miduara
 const categories = [
@@ -35,17 +34,10 @@ const categoryColorsMap: Record<string, string[]> = {
   Washingroom: ['#BB377D', '#C84E89'], // Purple-Pink to Darker Pink
 };
 
-// Kila design ina price na RATING MPYA
-const initialDesigns: DesignItem[] = [
-  { id: 1, name: 'Modern Kitchen', category: 'Kitchen', image: require('../../assets/kitchen.jpg'), price: 1000, rating: 4.5 },
-  { id: 2, name: 'Classic Kitchen', category: 'Kitchen', image: require('../../assets/kitchen.jpg'), price: 1200, rating: 4.0 },
-  { id: 3, name: 'Cozy Bedroom', category: 'Bedroom', image: require('../../assets/bedroom.jpg'), price: 900, rating: 4.8 },
-  { id: 4, name: 'Modern Bedroom', category: 'Bedroom', image: require('../../assets/bedroom.jpg'), price: 1100, rating: 4.2 },
-  { id: 5, name: 'Elegant Livingroom', category: 'Livingroom', image: require('../../assets/livingroom.jpg'), price: 1300, rating: 5.0 },
-  { id: 6, name: 'Modern Livingroom', category: 'Livingroom', image: require('../../assets/livingroom.jpg'), price: 1500, rating: 4.7 },
-  { id: 7, name: 'Classic Washingroom', category: 'Washingroom', image: require('../../assets/washingroom.jpg'), price: 800, rating: 3.9 },
-  { id: 8, name: 'Modern Washingroom', category: 'Washingroom', image: require('../../assets/washingroom.jpg'), price: 1000, rating: 4.3 },
-];
+export default function Design() {
+  const [loading, setLoading] = useState(true);
+  const [designs, setDesigns] = useState<ApiDesign[]>([]);
+  const [selectedDesigns, setSelectedDesigns] = useState<number[]>([]);
 
 // Msaidizi wa kuonyesha nyota na kuzifanya zibonyezeke
 const renderInteractiveStars = (currentRating: number, onStarPress: (newRating: number) => void) => {
@@ -73,45 +65,28 @@ const renderInteractiveStars = (currentRating: number, onStarPress: (newRating: 
   return <View style={{ flexDirection: 'row', alignItems: 'center' }}>{stars}</View>;
 };
 
-export default function Design() {
-  const [selectedCategory, setSelectedCategory] = useState('Kitchen');
-  const [selectedDesigns, setSelectedDesigns] = useState<DesignItem[]>([]);
-  // State to hold user-modified ratings for designs
-  const [userRatings, setUserRatings] = useState<{ [key: number]: number }>({});
-
   const router = useRouter();
 
-  // Initialize userRatings from initialDesigns on component mount
   useEffect(() => {
-    const initialUserRatings: { [key: number]: number } = {};
-    initialDesigns.forEach(design => {
-      initialUserRatings[design.id] = design.rating;
-    });
-    setUserRatings(initialUserRatings);
+    (async () => {
+      try {
+        setLoading(true);
+        const data = await designService.listPublicDesigns({});
+        setDesigns(data);
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, []);
 
-  // Filter designs by selected category
-  const filteredDesigns = initialDesigns.filter(d => d.category === selectedCategory);
-
-  // Handle design select/deselect
-  const toggleSelectDesign = (design: DesignItem) => {
-    setSelectedDesigns(prev =>
-      prev.some(d => d.id === design.id) // Check if already selected by ID
-        ? prev.filter(d => d.id !== design.id) // Remove if already selected
-        : [...prev, design] // Add if not selected
-    );
+  const toggleSelectDesign = (designId: number) => {
+    setSelectedDesigns(prev => prev.includes(designId) ? prev.filter(id => id !== designId) : [...prev, designId]);
   };
 
-  // Handle user rating change for a specific design
-  const handleRatingChange = (designId: number, newRating: number) => {
-    setUserRatings(prevRatings => ({
-      ...prevRatings,
-      [designId]: newRating,
-    }));
-  };
-
-  // Calculate total payment
-  const totalPayment = selectedDesigns.reduce((sum, d) => sum + d.price, 0);
+  const totalPayment = selectedDesigns.reduce((sum, id) => {
+    const d = designs.find(x => x.id === id);
+    return sum + (Number(d?.price || 0));
+  }, 0);
 
   let [fontsLoaded] = useFonts({
     Montserrat_400Regular,
@@ -178,33 +153,42 @@ export default function Design() {
         })}
       </ScrollView>
 
-      {/* Images for selected category */}
+      {/* Designs grid from API */}
       <ScrollView contentContainerStyle={styles.designGridContainer}>
         <View style={styles.designGrid}>
-          {filteredDesigns.length === 0 ? (
+          {loading ? (
+            <ActivityIndicator color={Colors.light.primary} />
+          ) : designs.length === 0 ? (
             <Text style={styles.noDesigns}>No designs found for this category.</Text>
           ) : (
-            filteredDesigns.map((design: DesignItem) => { // Explicitly type design here
-              const isSelected = selectedDesigns.some(d => d.id === design.id);
-              const currentDesignRating = userRatings[design.id] || design.rating; // Get user-modified rating or default
+            designs.map((design) => {
+              const primary = design.images?.find(i => i.is_primary) || design.images?.[0];
+              const isSelected = selectedDesigns.includes(design.id);
 
               return (
                 <TouchableOpacity
                   key={design.id}
-                  onPress={() => toggleSelectDesign(design)}
+                  onPress={() => toggleSelectDesign(design.id)}
                   style={[
                     styles.designCard,
                     isSelected && styles.designCardSelected,
                   ]}
                   activeOpacity={0.8}
                 >
-                  <Image source={design.image} style={styles.designImage} />
+                  {primary?.image ? (
+                    <Image source={{ uri: toMediaUrl(primary.image) || undefined }} style={styles.designImage} />
+                  ) : (
+                    <View style={[styles.designImage, { alignItems: 'center', justifyContent: 'center' }]}>
+                      <Ionicons name="image-outline" size={32} color={Colors.light.textSecondary} />
+                    </View>
+                  )}
                   <View style={styles.designInfo}>
-                    <Text style={styles.designName}>{design.name}</Text>
+                    <Text style={styles.designName}>{design.title}</Text>
                     <View style={styles.priceRatingContainer}>
-                      <Text style={styles.designPrice}>Tsh {design.price.toLocaleString()}</Text>
-                      {/* Render interactive stars here */}
-                      {renderInteractiveStars(currentDesignRating, (newRating) => handleRatingChange(design.id, newRating))}
+                      <Text style={styles.designPrice}>Tsh {Number(design.price).toLocaleString()}</Text>
+                      <TouchableOpacity onPress={() => router.push({ pathname: '/booking', params: { designs: JSON.stringify([{ id: design.id, name: design.title, price: design.price }]), total: Number(design.price) } })}>
+                        <Text style={{ color: Colors.light.primary, fontWeight: 'bold' }}>Book</Text>
+                      </TouchableOpacity>
                     </View>
                   </View>
                   {/* Tick icon with gradient */}
@@ -231,15 +215,7 @@ export default function Design() {
           <Text style={styles.totalText}>
             Total: <Text style={styles.totalAmount}>Tsh {totalPayment.toLocaleString()}</Text>
           </Text>
-          <TouchableOpacity
-            style={styles.bookBtn}
-            onPress={() =>
-              router.push({
-                pathname: '/booking',
-                params: { designs: JSON.stringify(selectedDesigns), total: totalPayment },
-              })
-            }
-          >
+          <TouchableOpacity style={styles.bookBtn} onPress={() => router.push({ pathname: '/booking', params: { designs: JSON.stringify(selectedDesigns.map(id => ({ id, name: designs.find(d => d.id === id)?.title, price: designs.find(d => d.id === id)?.price })) ), total: totalPayment } })}>
             {/* Book button with gradient */}
             <LinearGradient
               colors={['#487eb0', '#273c75']} // Blue gradient for the book button

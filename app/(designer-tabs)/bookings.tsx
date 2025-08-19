@@ -1,37 +1,37 @@
 import { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, RefreshControl } from 'react-native';
 import { useFonts, Montserrat_400Regular, Montserrat_700Bold } from '@expo-google-fonts/montserrat';
 import AppLoading from 'expo-app-loading';
 import { Colors } from '../../constants/Colors';
+import { bookingService } from '../../services/api';
 
 interface Booking {
-  id: string;
-  clientName: string;
-  designTitle: string;
-  status: 'pending' | 'confirmed' | 'completed';
-  paymentStatus: 'pending' | 'paid' | 'failed';
+  id: number;
+  client: { id: number; email: string; first_name?: string; last_name?: string };
+  design: { id: number; title: string };
+  status: 'pending' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled';
+  payment_status: 'pending' | 'paid' | 'partially_paid' | 'failed' | 'refunded';
   amount: number;
-  date: string;
+  start_date: string;
 }
 
 export default function Bookings() {
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
 
+  const load = async () => {
+    setRefreshing(true);
+    try {
+      const data = await bookingService.listMine();
+      setBookings(data);
+    } catch (e) {
+      console.warn('Failed to load bookings', e);
+    } finally {
+      setRefreshing(false);
+    }
+  };
   useEffect(() => {
-    // Hapa unaweza fetch bookings kutoka backend yako
-    // Kwa sasa, mfano wa bookings (unaweza acha array ikiwa tupu kuonyesha "hamna booking yoyote")
-    setBookings([
-      // Mfano wa booking moja:
-      // {
-      //   id: '1',
-      //   clientName: 'Asha Client',
-      //   designTitle: 'Modern Living Room',
-      //   status: 'confirmed',
-      //   paymentStatus: 'paid',
-      //   amount: 150000,
-      //   date: '2025-07-01',
-      // },
-    ]);
+    load();
   }, []);
 
   let [fontsLoaded] = useFonts({
@@ -50,15 +50,21 @@ export default function Bookings() {
           <Text style={{ color: '#888', fontSize: 18, marginTop: 40 }}>No bookings yet</Text>
         </View>
       ) : (
-        <ScrollView>
+        <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={Colors.light.primary} />}>
           {bookings.map((booking) => (
             <View key={booking.id} style={styles.card}>
-              <Text style={styles.bold}>{booking.clientName}</Text>
-              <Text style={styles.text}>Design: {booking.designTitle}</Text>
+              <Text style={styles.bold}>{booking.client.first_name || booking.client.email}</Text>
+              <Text style={styles.text}>Design: {booking.design.title}</Text>
               <Text style={styles.text}>Status: {booking.status}</Text>
-              <Text style={styles.text}>Payment: {booking.paymentStatus}</Text>
+              <Text style={styles.text}>Payment: {booking.payment_status}</Text>
               <Text style={styles.text}>Amount: Tsh {booking.amount}</Text>
-              <Text style={styles.text}>Date: {new Date(booking.date).toLocaleDateString()}</Text>
+              <Text style={styles.text}>Start: {new Date(booking.start_date).toLocaleDateString()}</Text>
+              {booking.status === 'pending' && (
+                <View style={{ flexDirection: 'row', marginTop: 8 }}>
+                  <Text onPress={async () => { await bookingService.confirm(booking.id); load(); }} style={{ color: Colors.light.primary, marginRight: 16 }}>Confirm</Text>
+                  <Text onPress={async () => { await bookingService.cancel(booking.id); load(); }} style={{ color: Colors.light.error }}>Cancel</Text>
+                </View>
+              )}
             </View>
           ))}
         </ScrollView>

@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons'; // For icons in Picker/Date field
 import { useFonts, Montserrat_400Regular, Montserrat_700Bold } from '@expo-google-fonts/montserrat';
 import AppLoading from 'expo-app-loading';
 import { Colors } from '../../constants/Colors';
+import { bookingService } from '../../services/api';
 
 // Designers list
 const designers = [
@@ -43,34 +44,40 @@ export default function Booking() {
     return Math.floor(100000000 + Math.random() * 900000000).toString();
   };
 
-  const handleBooking = () => {
+  const handleBooking = async () => {
     if (!name || !phone || !address || !email || date === 'Select Preferred Date') {
       Alert.alert('Missing Information', 'Please fill in all required fields and select a preferred date.');
       return;
     }
+    try {
+      // For demo, pick the first selected design id; in a real UX, booking a single design at a time is typical
+      const design = selectedDesigns[0];
+      if (!design) {
+        Alert.alert('No Design Selected', 'Please select a design to book.');
+        return;
+      }
 
-    const controlNumber = generateControlNumber();
-    const designNames = selectedDesigns.map(d => d.name).join(', ');
-    
-    Alert.alert(
-      'Booking Submitted',
-      `Design(s): ${designNames || 'N/A'}\nName: ${name}\nPhone: ${phone}\nAddress: ${address}\nPost Code: ${postcode}\nEmail: ${email}\nDesigner: ${designers.find(d => d.id === selectedDesignerId)?.name}\nTotal Cost: Tsh ${total.toLocaleString()}\nDate: ${date}\n\nPayment Control Number: ${controlNumber}`,
-      [
-        {
-          text: 'OK',
-          onPress: () => {
-            // Navigate to payment screen
-            router.replace({
-              pathname: '/payment', // Ensure this path is correct in your Expo Router setup
-              params: {
-                controlNumber,
-                amount: total.toString(),
-              },
-            });
-          },
-        },
-      ]
-    );
+      const payload = {
+        design_id: design.id,
+        amount: total,
+        deposit: 0,
+        start_date: new Date().toISOString().slice(0, 10),
+        address: address,
+        city: 'Dar es Salaam',
+        state: 'Dar',
+        country: 'TZ',
+        postal_code: postcode || '00000',
+        notes: `Booking via app for ${name} (${email}, ${phone})`,
+      };
+
+      const created = await bookingService.create(payload);
+
+      const controlNumber = generateControlNumber();
+      router.replace({ pathname: '/payment', params: { controlNumber, amount: String(total) } });
+    } catch (e: any) {
+      console.error('Booking failed:', e);
+      Alert.alert('Booking Failed', e?.message || 'Could not create booking');
+    }
   };
 
   // Function to simulate date picker

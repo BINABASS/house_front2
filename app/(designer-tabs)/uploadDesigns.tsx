@@ -41,6 +41,17 @@ export default function UploadDesigns() {
     is_premium: false,
   });
 
+  // Helper function to safely update form data with proper typing
+  const updateFormData = <K extends keyof DesignFormData>(
+    field: K,
+    value: DesignFormData[K]
+  ) => {
+    setFormData(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
   let [fontsLoaded] = useFonts({
     Montserrat_400Regular,
     Montserrat_500Medium,
@@ -84,8 +95,17 @@ export default function UploadDesigns() {
       Alert.alert('Image Required', 'Please select a design image to upload.');
       return;
     }
+    
+    // Check for missing required fields
     if (!formData.title || !formData.price || !formData.category_id || !formData.description) {
       Alert.alert('Missing Information', 'Please fill in all required fields.');
+      return;
+    }
+
+    // Validate price is a valid number
+    const priceValue = Number(formData.price);
+    if (isNaN(priceValue) || priceValue <= 0) {
+      Alert.alert('Invalid Price', 'Please enter a valid price greater than 0.');
       return;
     }
 
@@ -95,9 +115,9 @@ export default function UploadDesigns() {
     try {
       // 1) Create the design (JSON) — uses category_id & tag_ids expected by backend
       const created = await designService.createDesign({
-        title: formData.title,
-        description: formData.description,
-        price: formData.price,
+        title: formData.title.trim(),
+        description: formData.description.trim(),
+        price: priceValue,  // Convert string to number
         category_id: formData.category_id!,
         tag_ids: formData.tag_ids,
         is_premium: formData.is_premium,
@@ -135,7 +155,39 @@ export default function UploadDesigns() {
       ]);
     } catch (error: any) {
       console.error('Upload error:', error);
-      const errorMessage = error.response?.data?.detail || error.message || 'An error occurred while uploading your design.';
+      
+      // More detailed error handling
+      let errorMessage = 'An error occurred while uploading your design.';
+      
+      if (error.response) {
+        // The request was made and the server responded with a status code
+        // that falls out of the range of 2xx
+        if (error.response.data) {
+          // Handle field-specific validation errors
+          if (error.response.data.non_field_errors) {
+            errorMessage = error.response.data.non_field_errors.join('\n');
+          } else if (error.response.data.detail) {
+            errorMessage = error.response.data.detail;
+          } else if (typeof error.response.data === 'object') {
+            // Handle field errors like {field_name: ["error1", "error2"]}
+            const fieldErrors = Object.entries(error.response.data)
+              .map(([field, errors]) => {
+                const errorList = Array.isArray(errors) ? errors.join(', ') : String(errors);
+                return `${field}: ${errorList}`;
+              })
+              .join('\n');
+            errorMessage = `Validation error:\n${fieldErrors}`;
+          }
+        }
+      } else if (error.request) {
+        // The request was made but no response was received
+        errorMessage = 'No response from server. Please check your internet connection.';
+      } else if (error.message) {
+        // Something happened in setting up the request
+        errorMessage = `Request error: ${error.message}`;
+      }
+      
+      console.error('Upload failed:', errorMessage);
       Alert.alert('Upload Failed', errorMessage);
     } finally {
       setUploading(false);
@@ -177,27 +229,28 @@ export default function UploadDesigns() {
           style={styles.input}
           placeholder="e.g., Modern Living Room"
           value={formData.title}
-          onChangeText={(v) => setFormData((p) => ({ ...p, title: v }))}
+          onChangeText={(v) => updateFormData('title', v)}
         />
 
         <Text style={[styles.label, { marginTop: 12 }]}>Price *</Text>
         <TextInput
           style={styles.input}
-          keyboardType="numeric"
-          placeholder="e.g., 1200000"
+          placeholder="Price (e.g., 99.99)"
           value={formData.price}
-          onChangeText={(v) => setFormData((p) => ({ ...p, price: v }))}
+          onChangeText={text => updateFormData('price', text)}
+          keyboardType="decimal-pad"
+          placeholderTextColor="#666"
         />
 
         <Text style={[styles.label, { marginTop: 12 }]}>Category *</Text>
         <View style={styles.pickerWrapper}>
           <Picker
-            selectedValue={formData.category_id}
-            onValueChange={(v) => setFormData((p) => ({ ...p, category_id: v }))}
+            selectedValue={formData.category_id || ''}
+            onValueChange={(v) => updateFormData('category_id', v ? Number(v) : null)}
           >
-            <Picker.Item label="Select a category" value={null} />
+            <Picker.Item label="Select a category" value="" />
             {categories.map((c) => (
-              <Picker.Item key={c.id} label={c.name} value={c.id} />
+              <Picker.Item key={c.id} label={c.name} value={String(c.id)} />
             ))}
           </Picker>
         </View>
@@ -205,29 +258,40 @@ export default function UploadDesigns() {
         <Text style={[styles.label, { marginTop: 12 }]}>Tags</Text>
         <View style={styles.pickerWrapper}>
           <Picker
-            selectedValue={null}
-            onValueChange={(v) =>
-              setFormData((p) =>
-                p.tag_ids.includes(v) ? p : { ...p, tag_ids: [...p.tag_ids, v] }
-              )
-            }
+            selectedValue={''}
+            onValueChange={(v) => {
+              if (v) {
+                const tagId = Number(v);
+                setFormData(prev => ({
+                  ...prev,
+                  tag_ids: prev.tag_ids.includes(tagId)
+                    ? prev.tag_ids.filter(id => id !== tagId)
+                    : [...prev.tag_ids, tagId]
+                }));
+              }
+            }}
           >
-            <Picker.Item label="Add a tag..." value={null} />
+            <Picker.Item label="Add a tag..." value="" />
             {tags.map((t) => (
-              <Picker.Item key={t.id} label={t.name} value={t.id} />
+              <Picker.Item key={t.id} label={t.name} value={String(t.id)} />
             ))}
           </Picker>
         </View>
         {formData.tag_ids.length > 0 && (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 }}>
             {formData.tag_ids.map((id) => {
-              const label = tags.find((t) => t.id === id)?.name ?? id;
+              const tag = tags.find(t => t.id === id);
+              if (!tag) return null;
+              
               return (
-                <View key={id} style={styles.chip}>
-                  <Text style={styles.chipText}>{label}</Text>
+                <View key={String(id)} style={styles.chip}>
+                  <Text style={styles.chipText}>{tag.name}</Text>
                   <TouchableOpacity
                     onPress={() =>
-                      setFormData((p) => ({ ...p, tag_ids: p.tag_ids.filter((x) => x !== id) }))
+                      setFormData(p => ({
+                        ...p,
+                        tag_ids: p.tag_ids.filter(x => x !== id)
+                      }))
                     }
                   >
                     <Ionicons name="close" size={14} color="#555" />
