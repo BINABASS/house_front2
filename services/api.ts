@@ -180,7 +180,7 @@ export const designService = {
     return res.data;
   },
   async listMyDesigns() {
-    const res = await api.get('/designs/', { params: { designer: 'me' } });
+    const res = await api.get('/designs/', { params: { designer__id: 'me' } });
     return res.data;
   },
   async listPublicDesigns(filters?: any) {
